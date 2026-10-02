@@ -129,7 +129,7 @@ class ApiPaymentsStack(Stack):
 
 
         # -------------------------------------------------------------
-        # Lambdas apontando para a pasta 'src'
+        # Lambdas pointing to the 'src' folder
         # -------------------------------------------------------------
         validate_order_lambda = _lambda.Function(
             self, "ValidateOrderFunction",
@@ -146,7 +146,7 @@ class ApiPaymentsStack(Stack):
         )
 
         # -------------------------------------------------------------
-        # Tarefas do Step Functions
+        # Tasks for the Step Functions
         # -------------------------------------------------------------
         task_validate = tasks.LambdaInvoke(
             self, "Validate Order",
@@ -160,7 +160,7 @@ class ApiPaymentsStack(Stack):
             result_path="$.process_payment_result"
         )
 
-        # Política de retentativas para erros não tratados (Exceptions)
+        # Retry policy for unhandled exceptions (Exceptions)
         task_payment.add_retry(
             errors=["States.ALL"],
             interval=Duration.seconds(2),
@@ -176,13 +176,13 @@ class ApiPaymentsStack(Stack):
             cause="The order did not pass the business validation."
         )
 
-        # Decisão lógica
+        # Logical decision
         decision_validacao = sfn.Choice(self, "Is the order valid?")
         condition_approved = sfn.Condition.string_equals(
             "$.validate_order_result.Payload.status", "APPROVED"
         )
 
-        # Fluxo
+        # Flow
         fluxo = task_validate.next(
             decision_validacao
                 .when(condition_approved, task_payment.next(sfn.Succeed(self, "Success")))
