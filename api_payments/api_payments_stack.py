@@ -14,7 +14,47 @@ class ApiPaymentsStack(Stack):
         super().__init__(scope, id, **kwargs)
 
         #Create the SQS queue
-        queue = sqs.Queue(self, "SQSQueue")
+        
+
+
+
+        dead_letter_queue = sqs.Queue(
+            self,
+            dead_letter_queue_name,
+            queue_name=f"{dead_letter_queue_name}",
+        )
+        queue = sqs.Queue(
+            self,
+            queue_name,
+            queue_name=f"{queue_name}",
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=3,
+                queue=dead_letter_queue, # Require dead letter queue to be created first
+            ),
+        )
+        dead_letter_queue.add_to_resource_policy(
+        statement=iam.PolicyStatement(
+            actions=[
+                "sqs:StartMessageMoveTask",
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+                "sqs:CancelMessageMoveTask",
+                "sqs:ListMessageMoveTasks",
+            ],
+            effect=iam.Effect.ALLOW,
+            principals=[iam.ServicePrincipal("sqs.amazonaws.com")],
+            resources=[dead_letter_queue.queue_arn],
+        )
+        )
+        dead_letter_queue.add_to_resource_policy(
+            statement=iam.PolicyStatement(
+                actions=["sqs:SendMessage"],
+                effect=iam.Effect.ALLOW,
+                principals=[iam.ServicePrincipal("sqs.amazonaws.com")],
+                resources=[queue.queue_arn],
+            )
+        )
 
         #Create the API GW service role with permissions to call SQS
         rest_api_role = iam.Role(

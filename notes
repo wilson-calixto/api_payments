@@ -17,7 +17,7 @@ cdk synth
 cdk deploy
 
 
-
+skip lock
 primeiro  => 
 ## SC-02 — Serverless + Orquestração + Mensageria
 
@@ -26,9 +26,13 @@ primeiro  =>
 
 ### História / Contexto
 
-Uma fintech processa pagamentos de forma síncrona: o cliente clica em "pagar", o sistema chama o gateway, espera a resposta, atualiza o banco — tudo em sequência. Em dias normais funciona. Na Black Friday, 10.000 pagamentos simultâneos chegam. O servidor trava, timeout generalizado, transações duplicadas, cliente cobrado duas vezes.
+Uma fintech processa pagamentos de forma síncrona: o cliente clica em "pagar", o sistema chama o gateway,
+ espera a resposta, atualiza o banco — tudo em sequência. 
+  Em dias normais funciona. Na Black Friday, 10.000 pagamentos simultâneos chegam. 
+  O servidor trava, timeout generalizado, transações duplicadas, cliente cobrado duas vezes.
 
-O time de engenharia precisa separar o "receber o pedido" do "processar o pagamento" — e garantir que mesmo que o processador esteja lento, nenhuma transação se perca.
+O time de engenharia precisa separar o "receber o pedido" do "processar o pagamento" 
+— e garantir que mesmo que o processador esteja lento, nenhuma transação se perca.
 
 **O que o usuário busca resolver:**
 - Absorver picos sem derrubar o sistema (desacoplar entrada de processamento)
@@ -42,7 +46,7 @@ O time de engenharia precisa separar o "receber o pedido" do "processar o pagame
 ```
 POST /payments
     ↓
-Lambda (receiver) → Kinesis Stream (buffer de entrada em alta volumetria)
+gateway (receiver) → Kinesis Stream (buffer de entrada em alta volumetria)
                           ↓ batch processing
                     Lambda (consumer)
                           ↓
@@ -78,3 +82,9 @@ Sistema de gerenciamento de inventário event-driven com SQS + Lambda + DynamoDB
 ### Ferramenta de apoio
 
 **[LocalStack](https://github.com/localstack/localstack)** — emula todos os serviços AWS localmente via Docker. Desenvolve e testa Lambda, SQS, Kinesis, DynamoDB sem conta AWS. Quando funcionar local, deploy na AWS com confiança. Essencial para não queimar créditos durante desenvolvimento.
+
+
+
+add endpoint novo de payments 
+
+ validar payload 
