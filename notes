@@ -92,3 +92,6 @@ add criptografia de payload ponta a ponta com kms
  validar payload 
 
  mandar payload faltando um campo pra dar erro e ver se entra no dead letter queue
+
+
+add logs ou dlq quando der erro no processamento da mensagem

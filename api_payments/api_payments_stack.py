@@ -5,8 +5,14 @@ from aws_cdk import (
     aws_apigateway as apigw,
     aws_lambda as _lambda,
     aws_lambda_event_sources as lambda_event_source,
-    Aws, Stack
+    Aws, Stack,
+    Duration,
+    aws_stepfunctions as sfn,
+    aws_stepfunctions_tasks as tasks,
 )
+
+
+
 
 class ApiPaymentsStack(Stack):
 
@@ -112,7 +118,7 @@ class ApiPaymentsStack(Stack):
         sqs_lambda = _lambda.Function(self,'SQSTriggerLambda',
             handler='lambda-handler.handler',
             runtime=_lambda.Runtime.PYTHON_3_11,
-            code=_lambda.Code.from_asset('lambda'),
+            code=_lambda.Code.from_asset('src/lambda'),
         )
 
         #Create an SQS event source for Lambda
@@ -120,3 +126,70 @@ class ApiPaymentsStack(Stack):
 
         #Add SQS event source to the Lambda function
         sqs_lambda.add_event_source(sqs_event_source)
+
+
+        # -------------------------------------------------------------
+        # Lambdas apontando para a pasta 'src'
+        # -------------------------------------------------------------
+        validate_order_lambda = _lambda.Function(
+            self, "ValidateOrderFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="validate_order.handler",
+            code=_lambda.Code.from_asset("src/lambda")
+        )
+
+        process_payment_lambda = _lambda.Function(
+            self, "ProcessPaymentFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="process_payment.handler",
+            code=_lambda.Code.from_asset("src/lambda")
+        )
+
+        # -------------------------------------------------------------
+        # Tarefas do Step Functions
+        # -------------------------------------------------------------
+        task_validate = tasks.LambdaInvoke(
+            self, "Validate Order",
+            lambda_function=validate_order_lambda,
+            result_path="$.validate_order_result"
+        )
+
+        task_payment = tasks.LambdaInvoke(
+            self, "Process Payment",
+            lambda_function=process_payment_lambda,
+            result_path="$.process_payment_result"
+        )
+
+        # Política de retentativas para erros não tratados (Exceptions)
+        task_payment.add_retry(
+            errors=["States.ALL"],
+            interval=Duration.seconds(2),
+            max_attempts=3,
+            backoff_rate=2.0
+        )
+
+
+
+        task_failure_rejected = sfn.Fail(
+            self, "Order Rejected",
+            error="InvalidOrder",
+            cause="The order did not pass the business validation."
+        )
+
+        # Decisão lógica
+        decision_validacao = sfn.Choice(self, "Is the order valid?")
+        condition_approved = sfn.Condition.string_equals(
+            "$.validate_order_result.Payload.status", "APPROVED"
+        )
+
+        # Fluxo
+        fluxo = task_validate.next(
+            decision_validacao
+                .when(condition_approved, task_payment.next(sfn.Succeed(self, "Success")))
+                .otherwise(task_failure_rejected)
+        )
+
+        sfn.StateMachine(
+            self, "OrderProcessingStateMachine",
+            definition_body=sfn.DefinitionBody.from_chainable(fluxo)
+        )
