@@ -121,7 +121,7 @@ class ApiPaymentsStack(Stack):
 
 
         # -------------------------------------------------------------
-        # Lambdas apontando para a pasta 'src'
+        # Lambdas pointing to the 'src' folder
         # -------------------------------------------------------------
         validate_order_lambda = _lambda.Function(
             self, "ValidateOrderFunction",
@@ -175,7 +175,7 @@ class ApiPaymentsStack(Stack):
         )
 
         # Flow
-        fluxo = task_validate_order.next(
+        flow = task_validate_order.next(
             decision_validation
                 .when(condition_approved, task_payment.next(sfn.Succeed(self, "Success")))
                 .otherwise(task_failure_rejected)
@@ -183,5 +183,5 @@ class ApiPaymentsStack(Stack):
 
         sfn.StateMachine(
             self, "OrderProcessingStateMachine",
-            definition_body=sfn.DefinitionBody.from_chainable(fluxo)
+            definition_body=sfn.DefinitionBody.from_chainable(flow)
         )
