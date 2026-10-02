@@ -114,50 +114,42 @@ class ApiPaymentsStack(Stack):
             method_responses=[method_response]
         )
 
-        #Creating Lambda function that will be triggered by the SQS Queue
-        sqs_lambda = _lambda.Function(self,'SQSTriggerLambda',
-            handler='lambda-handler.handler',
-            runtime=_lambda.Runtime.PYTHON_3_11,
-            code=_lambda.Code.from_asset('src/lambda'),
-        )
 
         #Create an SQS event source for Lambda
         sqs_event_source = lambda_event_source.SqsEventSource(queue)
 
-        #Add SQS event source to the Lambda function
-        sqs_lambda.add_event_source(sqs_event_source)
 
 
         # -------------------------------------------------------------
-        # Lambdas pointing to the 'src' folder
+        # Lambdas apontando para a pasta 'src'
         # -------------------------------------------------------------
         validate_order_lambda = _lambda.Function(
             self, "ValidateOrderFunction",
             runtime=_lambda.Runtime.PYTHON_3_12,
             handler="validate_order.handler",
-            code=_lambda.Code.from_asset("src/lambda")
+            code=_lambda.Code.from_asset("api_payments/src/lambda")
         )
 
         process_payment_lambda = _lambda.Function(
             self, "ProcessPaymentFunction",
             runtime=_lambda.Runtime.PYTHON_3_12,
             handler="process_payment.handler",
-            code=_lambda.Code.from_asset("src/lambda")
+            code=_lambda.Code.from_asset("api_payments/src/lambda")
         )
 
         # -------------------------------------------------------------
-        # Tasks for the Step Functions
+        # Tasks of the Step Functions
         # -------------------------------------------------------------
-        task_validate = tasks.LambdaInvoke(
+        task_validate_order = tasks.LambdaInvoke(
             self, "Validate Order",
             lambda_function=validate_order_lambda,
-            result_path="$.validate_order_result"
+            result_path="$.resultado_validacao"
         )
 
         task_payment = tasks.LambdaInvoke(
             self, "Process Payment",
             lambda_function=process_payment_lambda,
-            result_path="$.process_payment_result"
+            result_path="$.resultado_pagamento"
         )
 
         # Retry policy for unhandled exceptions (Exceptions)
@@ -177,14 +169,14 @@ class ApiPaymentsStack(Stack):
         )
 
         # Logical decision
-        decision_validacao = sfn.Choice(self, "Is the order valid?")
+        decision_validation = sfn.Choice(self, "Is the order valid?")
         condition_approved = sfn.Condition.string_equals(
-            "$.validate_order_result.Payload.status", "APPROVED"
+            "$.resultado_validacao.Payload.status", "APPROVED"
         )
 
         # Flow
-        fluxo = task_validate.next(
-            decision_validacao
+        fluxo = task_validate_order.next(
+            decision_validation
                 .when(condition_approved, task_payment.next(sfn.Succeed(self, "Success")))
                 .otherwise(task_failure_rejected)
         )
