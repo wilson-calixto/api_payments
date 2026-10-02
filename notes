@@ -1,0 +1,74 @@
+
+
+
+
+source .venv/bin/activate
+
+
+ 
+cdk synth
+
+cdk deploy
+
+
+
+primeiro  => 
+## SC-02 — Serverless + Orquestração + Mensageria
+
+**Encontro:** 2 · **Tempo estimado:** 3–4 dias  
+**Serviços:** Lambda · Step Functions · SQS · SNS · Kinesis · Amazon MQ · CloudWatch · DynamoDB · IAM
+
+### História / Contexto
+
+Uma fintech processa pagamentos de forma síncrona: o cliente clica em "pagar", o sistema chama o gateway, espera a resposta, atualiza o banco — tudo em sequência. Em dias normais funciona. Na Black Friday, 10.000 pagamentos simultâneos chegam. O servidor trava, timeout generalizado, transações duplicadas, cliente cobrado duas vezes.
+
+O time de engenharia precisa separar o "receber o pedido" do "processar o pagamento" — e garantir que mesmo que o processador esteja lento, nenhuma transação se perca.
+
+**O que o usuário busca resolver:**
+- Absorver picos sem derrubar o sistema (desacoplar entrada de processamento)
+- Garantir que cada transação seja processada exatamente uma vez (idempotência)
+- Orquestrar etapas complexas: validar → reservar saldo → cobrar → notificar → registrar
+- Ter visibilidade do estado de cada transação a qualquer momento
+- Integrar com sistemas legados que falam AMQP (bancos e sistemas financeiros antigos)
+
+### Arquitetura
+
+```
+POST /payments
+    ↓
+Lambda (receiver) → Kinesis Stream (buffer de entrada em alta volumetria)
+                          ↓ batch processing
+                    Lambda (consumer)
+                          ↓
+                  Step Functions (state machine)
+                    ├── Task: ValidarTransacao (Lambda)
+                    ├── Task: ReservarSaldo     (Lambda → DynamoDB)
+                    ├── Choice: aprovado?
+                    │     ├── Sim → Task: Cobrar (Lambda → gateway externo)
+                    │     └── Não → Task: Notificar recusa (SNS → email/push)
+                    ├── Task: RegistrarAuditoria (Lambda → DynamoDB)
+                    └── Task: NotificarSucesso  (SNS → email + SQS → downstream)
+
+DLQ (Dead Letter Queue):
+  Mensagens que falharam 3x → SQS DLQ → CloudWatch alarm → time é notificado
+
+Amazon MQ:
+  Sistema legado do banco parceiro fala AMQP/STOMP → MQ faz bridge para o pipeline acima
+```
+
+### O que demonstra
+
+- Step Functions: cada etapa do pagamento é um estado — rastreável, auditável, re-executável
+- Kinesis vs SQS: Kinesis para stream de alta volumetria com ordering; SQS para filas de trabalho simples
+- SNS fan-out: um evento "pagamento aprovado" notifica email, push e sistema downstream simultaneamente
+- Amazon MQ: integração com sistemas legados que não falam SQS (AMQP/STOMP)
+- DLQ + alarm: nenhuma transação se perde silenciosamente
+
+### Repo de referência
+
+[localstack-samples/sample-sqs-lambda-dynamodb](https://github.com/localstack-samples/sample-sqs-lambda-dynamodb)
+Sistema de gerenciamento de inventário event-driven com SQS + Lambda + DynamoDB. Roda localmente via LocalStack e na AWS via CDK — ideal para desenvolver sem gastar créditos.
+
+### Ferramenta de apoio
+
+**[LocalStack](https://github.com/localstack/localstack)** — emula todos os serviços AWS localmente via Docker. Desenvolve e testa Lambda, SQS, Kinesis, DynamoDB sem conta AWS. Quando funcionar local, deploy na AWS com confiança. Essencial para não queimar créditos durante desenvolvimento.

@@ -1,0 +1,6 @@
+https://docs.aws.amazon.com/lambda/latest/dg/lambda-cdk-tutorial.html
+
+
+https://docs.aws.amazon.com/lambda/latest/dg/with-sqs-example.html
+
+https://github.com/aws-samples/aws-cdk-examples/blob/main/python/api-sqs-lambda/api_sqs_lambda/api_sqs_lambda_stack.py
