@@ -17,7 +17,9 @@ class ApiPaymentsStack(Stack):
         
 
 
-
+        queue_name = 'api-payments-queue'
+        dead_letter_queue_name = 'api-payments-dead-letter-queue'
+        
         dead_letter_queue = sqs.Queue(
             self,
             dead_letter_queue_name,
