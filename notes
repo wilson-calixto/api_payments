@@ -46,9 +46,9 @@ O time de engenharia precisa separar o "receber o pedido" do "processar o pagame
 ```
 POST /payments
     ↓
-gateway (receiver) → Kinesis Stream (buffer de entrada em alta volumetria)
+gateway (receiver) → SQS Queue || Kinesis Stream (buffer de entrada em alta volumetria)
                           ↓ batch processing
-                    Lambda (consumer)
+                    EventBridge | Lambda (consumer)
                           ↓
                   Step Functions (state machine)
                     ├── Task: ValidarTransacao (Lambda)

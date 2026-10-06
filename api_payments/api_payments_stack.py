@@ -1,6 +1,7 @@
 from constructs import Construct
 from aws_cdk import (
     aws_sqs as sqs,
+    aws_pipes as pipes,
     aws_iam as iam,
     aws_apigateway as apigw,
     aws_lambda as _lambda,
@@ -35,6 +36,7 @@ class ApiPaymentsStack(Stack):
             self,
             queue_name,
             queue_name=f"{queue_name}",
+            visibility_timeout=Duration.minutes(5),
             dead_letter_queue=sqs.DeadLetterQueue(
                 max_receive_count=3,
                 queue=dead_letter_queue, # Require dead letter queue to be created first
@@ -115,9 +117,6 @@ class ApiPaymentsStack(Stack):
         )
 
 
-        #Create an SQS event source for Lambda
-        sqs_event_source = lambda_event_source.SqsEventSource(queue)
-
 
 
         # -------------------------------------------------------------
@@ -145,6 +144,9 @@ class ApiPaymentsStack(Stack):
             lambda_function=validate_order_lambda,
             result_path="$.resultado_validacao"
         )
+
+  
+
 
         task_payment = tasks.LambdaInvoke(
             self, "Process Payment",
@@ -181,7 +183,31 @@ class ApiPaymentsStack(Stack):
                 .otherwise(task_failure_rejected)
         )
 
-        sfn.StateMachine(
+        state_machine = sfn.StateMachine(
             self, "OrderProcessingStateMachine",
             definition_body=sfn.DefinitionBody.from_chainable(flow)
+        )
+ 
+
+        # 2. Permission for the EventBridge Pipe to start the State Machine and read the SQS
+        pipe_role = iam.Role(
+            self, "PipeRole",
+            assumed_by=iam.ServicePrincipal("pipes.amazonaws.com")
+        )
+        queue.grant_consume_messages(pipe_role)
+        state_machine.grant_start_execution(pipe_role)
+
+        # 3. Create the Pipe connecting SQS -> Step Functions
+        pipes.CfnPipe(
+            self, "SqsToStepFunctionsPipe",
+            role_arn=pipe_role.role_arn,
+            source=queue.queue_arn,
+            target=state_machine.state_machine_arn,
+            target_parameters=pipes.CfnPipe.PipeTargetParametersProperty(
+                # <--- Extract and parse the JSON from the SQS body
+                input_template='<$.body>',
+                step_function_state_machine_parameters=pipes.CfnPipe.PipeTargetStateMachineParametersProperty(
+                    invocation_type="FIRE_AND_FORGET"
+                )
+            )
         )
