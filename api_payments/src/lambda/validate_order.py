@@ -1,34 +1,49 @@
 import json
 import logging
+import uuid
+
+from payload import parse_payload
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
 def handler(event, context):
-    logger.info(f"Receiving event: {json.dumps(event)}")
-    
-    
-    if isinstance(event, dict) and 'body' in event:
-        try:
-            body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
-        except json.JSONDecodeError:
-            raise ValueError("Error parsing: The payload is not a valid JSON.")
-    else:
-        body = event
+    logger.info("Receiving event: %s", json.dumps(event))
 
-    
-    required_field = "valor"
+    body = parse_payload(event)
+    required_fields = ("valor", "userId")
 
-    if not body or required_field not in body:    
-        raise ValueError(f"Invalid payload: The required field '{required_field}' is missing.")
+    if not body:
+        raise ValueError("Invalid payload: a JSON object is required.")
+    missing_fields = [
+        field
+        for field in required_fields
+        if field not in body or body[field] is None or body[field] == ""
+    ]
+    if missing_fields:
+        raise ValueError(
+            "Invalid payload: missing required field(s): " + ", ".join(missing_fields)
+        )
 
-    logger.info(f"Payload successfully processed for: {body[required_field]}")
-    logger.info(f"Validating order: {json.dumps(event)}")
-    
-    valor = event.get("valor", 0)
-    
+    valor = body.get("valor", 0)
+    try:
+        valor = float(valor)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid payload: The field 'valor' must be numeric.") from exc
+
+    logger.info("Validating order value: %s", valor)
+
     if valor <= 0:
-        # Erro de negócio tratado pelo fluxo condicional Choice
-        return {"status": "REJECTED", "motivo": "Invalid order value"}
-        
-    return {"status": "APPROVED", "valor": valor}
+        return {
+            "status": "REJECTED",
+            "valor": valor,
+            "payment_id": str(uuid.uuid4()),
+            "motivo": "Invalid order value",
+        }
+
+    return {
+        "status": "APPROVED",
+        "valor": valor,
+        "payment_id": str(uuid.uuid4()),
+    }

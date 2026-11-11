@@ -18,10 +18,20 @@ cdk deploy
 
 
 skip lock
+
+
+add =>  Uso de Constructos Personalizados (Custom Constructs)
+
+tirar o user id fixo no payload
+
+
 primeiro  => 
 ## SC-02 — Serverless + Orquestração + Mensageria
 
 **Encontro:** 2 · **Tempo estimado:** 3–4 dias  
+
+**Serviços:** api gateway  SQS · Step Functions(Lambda) ·SNS · Lambda · DynamoDB  · SES · CloudWatch  · IAM
+
 **Serviços:** Lambda · Step Functions · SQS · SNS · Kinesis · Amazon MQ · CloudWatch · DynamoDB · IAM
 
 ### História / Contexto
@@ -57,7 +67,7 @@ gateway (receiver) → SQS Queue || Kinesis Stream (buffer de entrada em alta vo
                     │     ├── Sim → Task: Cobrar (Lambda → gateway externo)
                     │     └── Não → Task: Notificar recusa (SNS → email/push)
                     ├── Task: RegistrarAuditoria (Lambda → DynamoDB)
-                    └── Task: NotificarSucesso  (SNS → email + SQS → downstream)
+                    └── Task: NotificarSucesso  (SNS → Lambda + DynamoDB → email )
 
 DLQ (Dead Letter Queue):
   Mensagens que falharam 3x → SQS DLQ → CloudWatch alarm → time é notificado
@@ -84,6 +94,7 @@ Sistema de gerenciamento de inventário event-driven com SQS + Lambda + DynamoDB
 **[LocalStack](https://github.com/localstack/localstack)** — emula todos os serviços AWS localmente via Docker. Desenvolve e testa Lambda, SQS, Kinesis, DynamoDB sem conta AWS. Quando funcionar local, deploy na AWS com confiança. Essencial para não queimar créditos durante desenvolvimento.
 
 
+add LOAD BALANCER 
 
 add endpoint novo de payments 
 

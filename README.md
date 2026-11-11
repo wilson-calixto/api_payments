@@ -56,3 +56,39 @@ command.
  * `cdk docs`        open CDK documentation
 
 Enjoy!
+
+## Notificações de pagamento por e-mail
+
+O fluxo de pagamento recebe `valor` e `userId`, publica o resultado em um dos
+tópicos SNS existentes e uma Lambda de notificação busca o usuário no DynamoDB
+antes de enviar o e-mail pelo Amazon SES.
+
+```json
+{
+  "valor": 100,
+  "userId": "user-001"
+}
+```
+
+O deploy cria duas tabelas:
+
+- `PaymentUsers`: usuários identificados por `userId`;
+- `PaymentEmailNotifications`: controle de mensagens SNS já processadas, para
+  reduzir e-mails duplicados em tentativas de entrega.
+
+Dez usuários de exemplo são incluídos durante a criação da stack. Eles usam
+endereços `example.com` e começam com `emailVerified=false`; portanto, não
+recebem e-mails. Antes de usar o fluxo, substitua cada `email` por um endereço
+real autorizado e defina `emailVerified` como `true` no item correspondente.
+Os seeds não sobrescrevem modificações feitas posteriormente na tabela.
+
+O remetente é obrigatório no deploy e precisa ser uma identidade verificada no
+SES. Exemplo:
+
+```bash
+cdk deploy --parameters SenderEmail=pagamentos@seu-dominio.com
+```
+
+Se a conta SES estiver em sandbox, cada destinatário também deve ser
+verificado. Falhas permanentes de entrega da assinatura SNS são encaminhadas à
+fila `api-payments-notification-dead-letter-queue`.
