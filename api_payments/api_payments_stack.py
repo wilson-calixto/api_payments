@@ -54,6 +54,20 @@ class ApiPaymentsStack(Stack):
             time_to_live_attribute="expiresAt",
             removal_policy=RemovalPolicy.RETAIN,
         )
+        transactions_table = dynamodb.Table(
+            self,
+            "PaymentTransactions",
+            partition_key=dynamodb.Attribute(name="paymentId", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+        payment_events_table = dynamodb.Table(
+            self,
+            "PaymentEvents",
+            partition_key=dynamodb.Attribute(name="eventId", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
         self._seed_users(users_table)
 
         queue_name = "api-payments-queue"
@@ -206,6 +220,7 @@ class ApiPaymentsStack(Stack):
                 "paymentId": sfn.JsonPath.string_at("$.resultado_validacao.payment_id"),
                 "amount": sfn.JsonPath.number_at("$.resultado_validacao.valor"),
                 "transactionId": sfn.JsonPath.string_at("$.resultado_pagamento.transaction_id"),
+                "eventId": sfn.JsonPath.string_at("$.resultado_persistencia.event_id"),
             }),
             subject="Payment success, Step Functions State Machine finalized",
         )
@@ -228,6 +243,20 @@ class ApiPaymentsStack(Stack):
             code=lambda_code,
             timeout=Duration.seconds(30),
         )
+        record_payment_lambda = _lambda.Function(
+            self,
+            "RecordApprovedPaymentFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="record_payment.handler",
+            code=lambda_code,
+            timeout=Duration.seconds(30),
+            environment={
+                "TRANSACTIONS_TABLE_NAME": transactions_table.table_name,
+                "PAYMENT_EVENTS_TABLE_NAME": payment_events_table.table_name,
+            },
+        )
+        transactions_table.grant_read_write_data(record_payment_lambda)
+        payment_events_table.grant_read_write_data(record_payment_lambda)
         notification_lambda = _lambda.Function(
             self,
             "PaymentNotificationFunction",
@@ -269,6 +298,27 @@ class ApiPaymentsStack(Stack):
                 dead_letter_queue=notification_dead_letter_queue,
             )
         )
+
+        reconciliation_lambda = _lambda.Function(
+            self,
+            "PaymentReconciliationFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="reconcile_payment.handler",
+            code=lambda_code,
+            timeout=Duration.seconds(30),
+            environment={
+                "TRANSACTIONS_TABLE_NAME": transactions_table.table_name,
+                "PAYMENT_EVENTS_TABLE_NAME": payment_events_table.table_name,
+            },
+        )
+        transactions_table.grant_read_write_data(reconciliation_lambda)
+        payment_events_table.grant_read_write_data(reconciliation_lambda)
+        sns_topic_payment_success.add_subscription(
+            subscriptions.LambdaSubscription(
+                reconciliation_lambda,
+                dead_letter_queue=notification_dead_letter_queue,
+            )
+        )
         sns_topic_payment_error.add_subscription(
             subscriptions.LambdaSubscription(
                 notification_lambda,
@@ -295,6 +345,19 @@ class ApiPaymentsStack(Stack):
             max_attempts=3,
             backoff_rate=2.0,
         )
+        task_record_payment = tasks.LambdaInvoke(
+            self,
+            "Persist Approved Payment",
+            lambda_function=record_payment_lambda,
+            payload_response_only=True,
+            result_path="$.resultado_persistencia",
+        )
+        task_record_payment.add_retry(
+            errors=["States.ALL"],
+            interval=Duration.seconds(2),
+            max_attempts=3,
+            backoff_rate=2.0,
+        )
 
         decision_validation = sfn.Choice(self, "Is the order valid?")
         condition_approved = sfn.Condition.string_equals(
@@ -310,7 +373,7 @@ class ApiPaymentsStack(Stack):
             comment="The order did not pass the business validation.",
         )
 
-        on_success = task_payment.next(publish_to_sns_task_success).next(task_success)
+        on_success = task_payment.next(task_record_payment).next(publish_to_sns_task_success).next(task_success)
         on_rejected = publish_to_sns_task_error.next(task_order_rejected)
 
         normalize_pipe_input = sfn.Pass(
@@ -423,6 +486,9 @@ class ApiPaymentsStack(Stack):
         CfnOutput(self, "PaymentsUrl", value=f"{base_api.url}payments")
         CfnOutput(self, "ExampleUrl", value=f"{base_api.url}example")
         CfnOutput(self, "PaymentUsersTableName", value=users_table.table_name)
+        CfnOutput(self, "PaymentTransactionsTableName", value=transactions_table.table_name)
+        CfnOutput(self, "PaymentEventsTableName", value=payment_events_table.table_name)
+        CfnOutput(self, "PaymentSuccessTopicArn", value=sns_topic_payment_success.topic_arn)
         CfnOutput(
             self,
             "NotificationDeadLetterQueueUrl",
