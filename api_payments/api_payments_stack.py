@@ -172,6 +172,7 @@ class ApiPaymentsStack(Stack):
 
 
         sns_topic_payment_error = sns.Topic(self, "PaymentErrorNotifications")
+        sns_topic_payment_failure = sns.Topic(self, "PaymentFailureNotifications")
         publish_to_sns_task_error = tasks.SnsPublish(
             self, "Publish Payment Error to SNS",
             topic=sns_topic_payment_error,
@@ -183,6 +184,23 @@ class ApiPaymentsStack(Stack):
                 "reason": sfn.JsonPath.string_at("$.resultado_validacao.motivo"),
             }),
             subject="Payment Error, Step Functions State Machine finalized",
+        )
+        publish_payment_failure = tasks.SnsPublish(
+            self,
+            "Publish Payment Failure to SNS",
+            topic=sns_topic_payment_failure,
+            message=sfn.TaskInput.from_object({
+                "eventType": "PAYMENT_FAILED",
+                "userId": sfn.JsonPath.string_at("$.userId"),
+                "paymentId": sfn.JsonPath.string_at("$.resultado_falha.payment_id"),
+                "amount": sfn.JsonPath.number_at("$.resultado_falha.amount"),
+                "reason": sfn.JsonPath.string_at("$.resultado_falha.error_description"),
+                "errorCode": sfn.JsonPath.string_at("$.resultado_falha.error_code"),
+                "failureCategory": sfn.JsonPath.string_at("$.resultado_falha.failure_category"),
+                "retryable": sfn.JsonPath.boolean_at("$.resultado_falha.retryable"),
+                "sourceSystem": sfn.JsonPath.string_at("$.resultado_falha.source_system"),
+            }),
+            subject="Payment failed, Step Functions State Machine finalized",
         )
 
 
@@ -203,7 +221,7 @@ class ApiPaymentsStack(Stack):
                 resources=[f"arn:{Aws.PARTITION}:logs:{Aws.REGION}:{Aws.ACCOUNT_ID}:*"],
             )
         )
-        for topic in (sns_topic_payment_success, sns_topic_payment_error):
+        for topic in (sns_topic_payment_success, sns_topic_payment_error, sns_topic_payment_failure):
             topic.add_logging_config(
                 protocol=sns.LoggingProtocol.LAMBDA,
                 failure_feedback_role=sns_delivery_log_role,
@@ -325,6 +343,31 @@ class ApiPaymentsStack(Stack):
                 dead_letter_queue=notification_dead_letter_queue,
             )
         )
+        sns_topic_payment_failure.add_subscription(
+            subscriptions.LambdaSubscription(
+                notification_lambda,
+                dead_letter_queue=notification_dead_letter_queue,
+            )
+        )
+
+        notification_redrive_lambda = _lambda.Function(
+            self,
+            "NotificationDlqRedriveFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="redrive_notification_dlq.handler",
+            code=lambda_code,
+            timeout=Duration.seconds(30),
+            environment={
+                "NOTIFICATION_DLQ_URL": notification_dead_letter_queue.queue_url,
+                "PAYMENT_SUCCESS_TOPIC_ARN": sns_topic_payment_success.topic_arn,
+                "PAYMENT_ERROR_TOPIC_ARN": sns_topic_payment_error.topic_arn,
+                "PAYMENT_FAILURE_TOPIC_ARN": sns_topic_payment_failure.topic_arn,
+            },
+        )
+        notification_dead_letter_queue.grant_consume_messages(notification_redrive_lambda)
+        sns_topic_payment_success.grant_publish(notification_redrive_lambda)
+        sns_topic_payment_error.grant_publish(notification_redrive_lambda)
+        sns_topic_payment_failure.grant_publish(notification_redrive_lambda)
 
         task_validate_order = tasks.LambdaInvoke(
             self, "Validate Order",
@@ -358,6 +401,46 @@ class ApiPaymentsStack(Stack):
             max_attempts=3,
             backoff_rate=2.0,
         )
+        handle_payment_failure_lambda = _lambda.Function(
+            self,
+            "HandlePaymentFailureFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="handle_payment_failure.handler",
+            code=lambda_code,
+            timeout=Duration.seconds(30),
+            environment={
+                "TRANSACTIONS_TABLE_NAME": transactions_table.table_name,
+                "PAYMENT_EVENTS_TABLE_NAME": payment_events_table.table_name,
+            },
+        )
+        transactions_table.grant_read_write_data(handle_payment_failure_lambda)
+        payment_events_table.grant_read_write_data(handle_payment_failure_lambda)
+        task_handle_payment_failure = tasks.LambdaInvoke(
+            self,
+            "Handle Payment Failure",
+            lambda_function=handle_payment_failure_lambda,
+            payload_response_only=True,
+            result_path="$.resultado_falha",
+        )
+        task_handle_payment_failure.add_retry(
+            errors=["States.ALL"],
+            interval=Duration.seconds(2),
+            max_attempts=3,
+            backoff_rate=2.0,
+        )
+        task_handle_payment_rejection = tasks.LambdaInvoke(
+            self,
+            "Record Payment Rejection",
+            lambda_function=handle_payment_failure_lambda,
+            payload_response_only=True,
+            result_path="$.resultado_rejeicao",
+        )
+        task_handle_payment_rejection.add_retry(
+            errors=["States.ALL"],
+            interval=Duration.seconds(2),
+            max_attempts=3,
+            backoff_rate=2.0,
+        )
 
         decision_validation = sfn.Choice(self, "Is the order valid?")
         condition_approved = sfn.Condition.string_equals(
@@ -372,9 +455,18 @@ class ApiPaymentsStack(Stack):
             self, "Order Rejected",
             comment="The order did not pass the business validation.",
         )
+        task_payment_failed = sfn.Succeed(
+            self,
+            "Payment Failed",
+            comment="The payment failure was persisted and published to the source system.",
+        )
 
+        task_payment.add_catch(
+            task_handle_payment_failure.next(publish_payment_failure).next(task_payment_failed),
+            result_path="$.erro_processamento",
+        )
         on_success = task_payment.next(task_record_payment).next(publish_to_sns_task_success).next(task_success)
-        on_rejected = publish_to_sns_task_error.next(task_order_rejected)
+        on_rejected = task_handle_payment_rejection.next(publish_to_sns_task_error).next(task_order_rejected)
 
         normalize_pipe_input = sfn.Pass(
             self,
@@ -493,6 +585,21 @@ class ApiPaymentsStack(Stack):
             self,
             "NotificationDeadLetterQueueUrl",
             value=notification_dead_letter_queue.queue_url,
+        )
+        CfnOutput(
+            self,
+            "NotificationDlqRedriveFunctionName",
+            value=notification_redrive_lambda.function_name,
+        )
+        CfnOutput(
+            self,
+            "PaymentFailureTopicArn",
+            value=sns_topic_payment_failure.topic_arn,
+        )
+        CfnOutput(
+            self,
+            "PaymentErrorTopicArn",
+            value=sns_topic_payment_error.topic_arn,
         )
         CfnOutput(
             self,

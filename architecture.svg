@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="940" viewBox="0 0 1500 940">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#425466"/></marker>
+    <style>
+      .box{stroke:#243447;stroke-width:2;rx:12;ry:12}.title{font:700 18px sans-serif;fill:#102a43}.text{font:14px sans-serif;fill:#243b53}.arrow{stroke:#425466;stroke-width:2;fill:none;marker-end:url(#arrow)}.small{font:12px sans-serif;fill:#52606d}.group{fill:#f5f7fa;stroke:#bcccdc;stroke-width:2;stroke-dasharray:8 6;rx:16;ry:16}.grouptext{font:700 16px sans-serif;fill:#486581}
+    </style>
+  </defs>
+  <rect width="1500" height="940" fill="#ffffff"/>
+  <text x="750" y="38" text-anchor="middle" class="title" font-size="26">API Payments — arquitetura do pagamento aprovado</text>
+  <rect x="30" y="70" width="1440" height="150" class="group"/><text x="55" y="100" class="grouptext">Entrada e orquestração</text>
+  <rect x="65" y="125" width="170" height="65" fill="#e8f1fb" class="box"/><text x="150" y="153" text-anchor="middle" class="title">API Gateway</text><text x="150" y="174" text-anchor="middle" class="small">POST /payments</text>
+  <rect x="300" y="125" width="180" height="65" fill="#fff4d6" class="box"/><text x="390" y="153" text-anchor="middle" class="title">SQS</text><text x="390" y="174" text-anchor="middle" class="small">payments queue + DLQ</text>
+  <rect x="545" y="125" width="190" height="65" fill="#e8f1fb" class="box"/><text x="640" y="153" text-anchor="middle" class="title">EventBridge Pipes</text><text x="640" y="174" text-anchor="middle" class="small">SQS → Step Functions</text>
+  <rect x="800" y="125" width="220" height="65" fill="#e8f1fb" class="box"/><text x="910" y="153" text-anchor="middle" class="title">Step Functions</text><text x="910" y="174" text-anchor="middle" class="small">Express state machine</text>
+  <path d="M235 157 H300 M480 157 H545 M735 157 H800" class="arrow"/>
+
+  <rect x="30" y="255" width="700" height="270" class="group"/><text x="55" y="285" class="grouptext">Processamento e consistência</text>
+  <rect x="65" y="325" width="190" height="65" fill="#fff4d6" class="box"/><text x="160" y="353" text-anchor="middle" class="title">Validate Order</text><text x="160" y="374" text-anchor="middle" class="small">valida valor e userId</text>
+  <rect x="300" y="325" width="190" height="65" fill="#fff4d6" class="box"/><text x="395" y="353" text-anchor="middle" class="title">Process Payment</text><text x="395" y="374" text-anchor="middle" class="small">gateway → transaction_id</text>
+  <rect x="535" y="325" width="160" height="65" fill="#d9f2e6" class="box"/><text x="615" y="353" text-anchor="middle" class="title">Record Payment</text><text x="615" y="374" text-anchor="middle" class="small">transact write</text>
+  <path d="M910 190 V250 H160 V325 M255 357 H300 M490 357 H535" class="arrow"/>
+  <rect x="90" y="430" width="250" height="65" fill="#d9f2e6" class="box"/><text x="215" y="458" text-anchor="middle" class="title">PaymentTransactions</text><text x="215" y="479" text-anchor="middle" class="small">status + reconciliation</text>
+  <rect x="410" y="430" width="250" height="65" fill="#d9f2e6" class="box"/><text x="535" y="458" text-anchor="middle" class="title">PaymentEvents</text><text x="535" y="479" text-anchor="middle" class="small">audit / idempotency</text>
+  <path d="M615 390 V410 H215 V430 M615 390 V410 H535 V430" class="arrow"/>
+
+  <rect x="770" y="255" width="700" height="270" class="group"/><text x="795" y="285" class="grouptext">Integrações após aprovação</text>
+  <rect x="810" y="325" width="220" height="65" fill="#fce8ef" class="box"/><text x="920" y="353" text-anchor="middle" class="title">SNS Success Topic</text><text x="920" y="374" text-anchor="middle" class="small">PAYMENT_APPROVED bus</text>
+  <path d="M695 357 H810" class="arrow"/>
+  <rect x="1080" y="315" width="150" height="75" fill="#fff4d6" class="box"/><text x="1155" y="345" text-anchor="middle" class="title">Email Lambda</text><text x="1155" y="367" text-anchor="middle" class="small">SES</text>
+  <rect x="1270" y="315" width="150" height="75" fill="#fff4d6" class="box"/><text x="1345" y="345" text-anchor="middle" class="title">Reconciliation</text><text x="1345" y="367" text-anchor="middle" class="small">STARTED</text>
+  <path d="M1030 350 H1080 M1030 370 H1270" class="arrow"/>
+  <rect x="900" y="440" width="300" height="55" fill="#fce8ef" class="box"/><text x="1050" y="473" text-anchor="middle" class="title">Pedido • ERP • Faturamento</text>
+  <path d="M920 390 V420 H1050 V440" class="arrow"/>
+  <path d="M1155 390 V430 H215 V430" class="arrow"/><text x="790" y="423" class="small">users + notification idempotency</text>
+  <path d="M1345 390 V430 H535 V430" class="arrow"/><text x="1220" y="423" class="small">audit event</text>
+  <rect x="65" y="535" width="190" height="58" fill="#fde2e1" class="box"/><text x="160" y="560" text-anchor="middle" class="title">Handle Failure</text><text x="160" y="579" text-anchor="middle" class="small">classifica + persiste</text>
+  <rect x="300" y="535" width="190" height="58" fill="#fce8ef" class="box"/><text x="395" y="560" text-anchor="middle" class="title">Failure SNS</text><text x="395" y="579" text-anchor="middle" class="small">origem / dependentes</text>
+  <rect x="535" y="535" width="210" height="58" fill="#fde2e1" class="box"/><text x="640" y="560" text-anchor="middle" class="title">Notification DLQ</text><text x="640" y="579" text-anchor="middle" class="small">redrive manual</text>
+  <path d="M395 390 V515 H160 V535 M255 564 H300 M490 564 H535" class="arrow"/>
+  <text x="750" y="575" text-anchor="middle" class="small">Falhas: técnica • financeira • antifraude • negócio</text>
+  <text x="750" y="595" text-anchor="middle" class="small">SNS faz fan-out; sistemas externos assinam com filas e DLQs próprias.</text>
+  <rect x="30" y="620" width="1440" height="250" class="group"/><text x="55" y="650" class="grouptext">Notificação e dados auxiliares</text>
+  <rect x="100" y="700" width="240" height="65" fill="#d9f2e6" class="box"/><text x="220" y="728" text-anchor="middle" class="title">PaymentUsers</text><text x="220" y="749" text-anchor="middle" class="small">perfil e e-mail verificado</text>
+  <rect x="440" y="700" width="270" height="65" fill="#d9f2e6" class="box"/><text x="575" y="728" text-anchor="middle" class="title">EmailNotifications</text><text x="575" y="749" text-anchor="middle" class="small">deduplicação + TTL</text>
+  <rect x="850" y="700" width="210" height="65" fill="#e8f1fb" class="box"/><text x="955" y="728" text-anchor="middle" class="title">Amazon SES</text><text x="955" y="749" text-anchor="middle" class="small">entrega do e-mail</text>
+  <rect x="1170" y="700" width="220" height="65" fill="#fff4d6" class="box"/><text x="1280" y="728" text-anchor="middle" class="title">Notification DLQ</text><text x="1280" y="749" text-anchor="middle" class="small">falhas de entrega</text>
+  <path d="M1155 390 V665 H220 V700 M1155 390 V665 H575 V700 M1155 390 V665 H955 V700" class="arrow"/>
+</svg>

@@ -57,7 +57,7 @@ def _parse_message(raw_message):
     missing_fields = [field for field in required_fields if field not in message]
     if missing_fields:
         raise ValueError("SNS message is missing: " + ", ".join(missing_fields))
-    if message["eventType"] not in {"PAYMENT_APPROVED", "PAYMENT_REJECTED"}:
+    if message["eventType"] not in {"PAYMENT_APPROVED", "PAYMENT_REJECTED", "PAYMENT_FAILED"}:
         raise ValueError("Unsupported payment event type.")
     return message
 
